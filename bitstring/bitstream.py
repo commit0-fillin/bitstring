@@ -104,19 +104,25 @@ class ConstBitStream(Bits):
 
     def _setbytepos(self, bytepos: int) -> None:
         """Move to absolute byte-aligned position in stream."""
-        pass
+        if bytepos * 8 > len(self):
+            raise ValueError("Byte position beyond end of bitstring")
+        self._pos = bytepos * 8
 
     def _getbytepos(self) -> int:
         """Return the current position in the stream in bytes. Must be byte aligned."""
-        pass
+        if self._pos % 8:
+            raise ValueError("Current position is not byte aligned")
+        return self._pos // 8
 
     def _setbitpos(self, pos: int) -> None:
         """Move to absolute position bit in bitstream."""
-        pass
+        if pos < 0 or pos > len(self):
+            raise ValueError("Bit position out of range")
+        self._pos = pos
 
     def _getbitpos(self) -> int:
         """Return the current position in the stream in bits."""
-        pass
+        return self._pos
 
     def __copy__(self: TConstBitStream) -> TConstBitStream:
         """Return a new copy of the ConstBitStream for the copy module."""
@@ -179,7 +185,9 @@ class ConstBitStream(Bits):
         The current bit position will be moved to the end of the BitStream.
 
         """
-        pass
+        bs = self.__class__._create_from_bitstype(bs)
+        self._addright(bs)
+        self._pos = len(self)
 
     def __repr__(self) -> str:
         """Return representation that could be used to recreate the bitstring.
@@ -199,7 +207,18 @@ class ConstBitStream(Bits):
         Raises ValueError if pos < 0 or pos > len(self).
 
         """
-        pass
+        bs = self.__class__._create_from_bitstype(bs)
+        if pos is None:
+            pos = self._pos
+        if pos < 0 or pos > len(self):
+            raise ValueError("Overwrite position out of range")
+        
+        end = pos + len(bs)
+        if end > len(self):
+            self._addright(BitStore(end - len(self)))
+        
+        self._overwrite(bs, pos)
+        self._pos = end
 
     def find(self, bs: BitsType, /, start: Optional[int]=None, end: Optional[int]=None, bytealigned: Optional[bool]=None) -> Union[Tuple[int], Tuple[()]]:
         """Find first occurrence of substring bs.
@@ -242,7 +261,18 @@ class ConstBitStream(Bits):
         if end < start.
 
         """
-        pass
+        bs = self.__class__._create_from_bitstype(bs)
+        if not bs:
+            raise ValueError("Cannot find an empty bitstring")
+        
+        start, end = self._validate_slice(start, end)
+        if bytealigned is None:
+            bytealigned = bitstring.bitstring_options.bytealigned
+        
+        p = self._rfind_msb0(bs, start, end, bytealigned)
+        if p:
+            self._pos = p[0]
+        return p
 
     def read(self, fmt: Union[int, str, Dtype]) -> Union[int, float, str, Bits, bool, bytes, None]:
         """Interpret next bits according to the format string and return result.
@@ -280,7 +310,22 @@ class ConstBitStream(Bits):
         Raises ValueError if the format is not understood.
 
         """
-        pass
+        if isinstance(fmt, numbers.Integral):
+            fmt = f'bits:{fmt}'
+        
+        if isinstance(fmt, str):
+            name, length = utils.parse_fmt(fmt)
+        elif isinstance(fmt, Dtype):
+            name, length = fmt.name, fmt.length
+        else:
+            raise ValueError("Format must be a string, integer, or Dtype")
+        
+        if self._pos + length > len(self):
+            raise bitstring.ReadError(f"Not enough bits available to read {fmt}")
+        
+        value, new_pos = self._readtoken(name, self._pos, length)
+        self._pos = new_pos
+        return value
 
     def readlist(self, fmt: Union[str, List[Union[int, str, Dtype]]], **kwargs) -> List[Union[int, float, str, Bits, bool, bytes, None]]:
         """Interpret next bits according to format string(s) and return list.
@@ -303,7 +348,31 @@ class ConstBitStream(Bits):
         >>> i, bs1, bs2 = s.readlist(['uint:12', 10, 10])
 
         """
-        pass
+        if isinstance(fmt, str):
+            fmt = [f.strip() for f in fmt.split(',')]
+        
+        return_values = []
+        for f in fmt:
+            if isinstance(f, numbers.Integral):
+                f = f'bits:{f}'
+            if isinstance(f, str):
+                name, length = utils.parse_fmt(f)
+                if name in kwargs:
+                    length = kwargs[name]
+            elif isinstance(f, Dtype):
+                name, length = f.name, f.length
+            else:
+                raise ValueError("Format must be a string, integer, or Dtype")
+            
+            if self._pos + length > len(self):
+                raise bitstring.ReadError(f"Not enough bits available to read {f}")
+            
+            value, new_pos = self._readtoken(name, self._pos, length)
+            self._pos = new_pos
+            if name != 'pad':
+                return_values.append(value)
+        
+        return return_values
 
     def readto(self: TConstBitStream, bs: BitsType, /, bytealigned: Optional[bool]=None) -> TConstBitStream:
         """Read up to and including next occurrence of bs and return result.
@@ -316,7 +385,17 @@ class ConstBitStream(Bits):
         Raises ReadError if bs is not found.
 
         """
-        pass
+        bs = self.__class__._create_from_bitstype(bs)
+        if not bs:
+            raise ValueError("Cannot read to an empty bitstring")
+        
+        found = self.find(bs, start=self._pos, bytealigned=bytealigned)
+        if not found:
+            raise bitstring.ReadError(f"Substring {bs} not found")
+        
+        result = self._slice(self._pos, found[0] + len(bs))
+        self._pos = found[0] + len(bs)
+        return result
 
     def peek(self: TConstBitStream, fmt: Union[int, str]) -> Union[int, float, str, TConstBitStream, bool, bytes, None]:
         """Interpret next bits according to format string and return result.
@@ -332,7 +411,15 @@ class ConstBitStream(Bits):
         See the docstring for 'read' for token examples.
 
         """
-        pass
+        if isinstance(fmt, numbers.Integral):
+            fmt = f'bits:{fmt}'
+        
+        name, length = utils.parse_fmt(fmt)
+        if self._pos + length > len(self):
+            raise bitstring.ReadError(f"Not enough bits available to peek {fmt}")
+        
+        value, _ = self._readtoken(name, self._pos, length)
+        return value
 
     def peeklist(self, fmt: Union[str, List[Union[int, str]]], **kwargs) -> List[Union[int, float, str, Bits, None]]:
         """Interpret next bits according to format string(s) and return list.
@@ -351,7 +438,30 @@ class ConstBitStream(Bits):
         See the docstring for 'read' for token examples.
 
         """
-        pass
+        if isinstance(fmt, str):
+            fmt = [f.strip() for f in fmt.split(',')]
+        
+        return_values = []
+        pos = self._pos
+        for f in fmt:
+            if isinstance(f, numbers.Integral):
+                f = f'bits:{f}'
+            if isinstance(f, str):
+                name, length = utils.parse_fmt(f)
+                if name in kwargs:
+                    length = kwargs[name]
+            else:
+                raise ValueError("Format must be a string or integer")
+            
+            if pos + length > len(self):
+                raise bitstring.ReadError(f"Not enough bits available to peek {f}")
+            
+            value, new_pos = self._readtoken(name, pos, length)
+            pos = new_pos
+            if name != 'pad':
+                return_values.append(value)
+        
+        return return_values
 
     def bytealign(self) -> int:
         """Align to next byte and return number of skipped bits.
@@ -360,7 +470,11 @@ class ConstBitStream(Bits):
         aligning to the next byte.
 
         """
-        pass
+        skipped = (8 - (self._pos % 8)) % 8
+        if self._pos + skipped > len(self):
+            raise ValueError("Cannot byte align - end of bitstring reached")
+        self._pos += skipped
+        return skipped
 
     @overload
     def __getitem__(self: TBits, key: slice, /) -> TBits:
@@ -510,7 +624,9 @@ class BitStream(ConstBitStream, bitstring.BitArray):
         bs -- The bitstring to prepend.
 
         """
-        pass
+        bs = self.__class__._create_from_bitstype(bs)
+        self._addleft(bs)
+        self._pos += len(bs)
 
     def __setitem__(self, /, key: Union[slice, int], value: BitsType) -> None:
         length_before = len(self)
@@ -543,7 +659,14 @@ class BitStream(ConstBitStream, bitstring.BitArray):
         Raises ValueError if pos < 0 or pos > len(self).
 
         """
-        pass
+        bs = self.__class__._create_from_bitstype(bs)
+        if pos is None:
+            pos = self._pos
+        if pos < 0 or pos > len(self):
+            raise ValueError("Invalid insert position")
+        
+        self._insert(bs, pos)
+        self._pos = pos + len(bs)
 
     def replace(self, old: BitsType, new: BitsType, start: Optional[int]=None, end: Optional[int]=None, count: Optional[int]=None, bytealigned: Optional[bool]=None) -> int:
         """Replace all occurrences of old with new in place.
@@ -565,4 +688,29 @@ class BitStream(ConstBitStream, bitstring.BitArray):
         out of range.
 
         """
-        pass
+        old = self.__class__._create_from_bitstype(old)
+        new = self.__class__._create_from_bitstype(new)
+        if not old:
+            raise ValueError("Cannot replace an empty bitstring")
+        
+        start, end = self._validate_slice(start, end)
+        if bytealigned is None:
+            bytealigned = bitstring.bitstring_options.bytealigned
+        
+        positions = list(self.findall(old, start, end, bytealigned))
+        if count is not None:
+            positions = positions[:count]
+        
+        if not positions:
+            return 0
+        
+        newdata = self[:positions[0]]
+        for i, pos in enumerate(positions):
+            if i + 1 < len(positions):
+                newdata += new + self[pos + len(old):positions[i + 1]]
+            else:
+                newdata += new + self[pos + len(old):]
+        
+        self._setbytes_unsafe(newdata.tobytes(), newdata.len)
+        self._pos = min(self._pos, len(self))
+        return len(positions)
