@@ -410,19 +410,65 @@ class Bits:
 
     def _clear(self) -> None:
         """Reset the bitstring to an empty state."""
-        pass
+        self._bitstore = BitStore()
 
     def _setauto_no_length_or_offset(self, s: BitsType, /) -> None:
         """Set bitstring from a bitstring, file, bool, array, iterable or string."""
-        pass
+        if isinstance(s, Bits):
+            self._bitstore = s._bitstore._copy()
+        elif isinstance(s, str):
+            self._setbin_safe(s)
+        elif isinstance(s, (bytes, bytearray)):
+            self._setbytes(s)
+        elif isinstance(s, numbers.Integral):
+            self._setuint(s)
+        elif isinstance(s, (array.array, bitarray.bitarray)):
+            self._setbytes(s.tobytes())
+        elif isinstance(s, collections.abc.Iterable):
+            self._setbin_safe(''.join('1' if bool(x) else '0' for x in s))
+        else:
+            raise TypeError(f"Cannot create bitstring from {type(s).__name__} type.")
 
     def _setauto(self, s: BitsType, length: Optional[int], offset: Optional[int], /) -> None:
         """Set bitstring from a bitstring, file, bool, array, iterable or string."""
-        pass
+        if offset is not None:
+            if offset < 0:
+                raise ValueError("Offset must be non-negative.")
+            if isinstance(s, str):
+                s = s[offset // 4:]
+            else:
+                s = s[offset // 8:]
+
+        if length is not None:
+            if length < 0:
+                raise ValueError("Length must be non-negative.")
+            if isinstance(s, str):
+                s = s[:length // 4]
+            else:
+                s = s[:length // 8]
+
+        self._setauto_no_length_or_offset(s)
+
+        if length is not None:
+            if length > len(self):
+                self._bitstore._addright(BitStore(length - len(self)))
+            elif length < len(self):
+                self._truncateright(len(self) - length)
 
     def _setfile(self, filename: str, length: Optional[int]=None, offset: Optional[int]=None) -> None:
         """Use file as source of bits."""
-        pass
+        with open(filename, 'rb') as f:
+            if offset is not None:
+                f.seek(offset // 8)
+            data = f.read(length // 8 if length is not None else -1)
+        self._setbytes(data)
+        if offset is not None and offset % 8:
+            self._truncateleft(offset % 8)
+        if length is not None:
+            if length > len(self):
+                self._bitstore._addright(BitStore(length - len(self)))
+            elif length < len(self):
+                self._truncateright(len(self) - length)
 
     def _setbytes(self, data: Union[bytearray, bytes, List], length: None=None) -> None:
         """Set the data from a bytes or bytearray object."""
