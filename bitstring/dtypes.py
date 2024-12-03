@@ -42,57 +42,57 @@ class Dtype:
     @property
     def scale(self) -> Union[int, float, None]:
         """The multiplicative scale applied when interpreting the data."""
-        pass
+        return self._scale
 
     @property
     def name(self) -> str:
         """A string giving the name of the data type."""
-        pass
+        return self._name
 
     @property
     def length(self) -> int:
         """The length of the data type in units of bits_per_item. Set to None for variable length dtypes."""
-        pass
+        return self._length
 
     @property
     def bitlength(self) -> Optional[int]:
         """The number of bits needed to represent a single instance of the data type. Set to None for variable length dtypes."""
-        pass
+        return self._bitlength
 
     @property
     def bits_per_item(self) -> int:
         """The number of bits for each unit of length. Usually 1, but equals 8 for bytes type."""
-        pass
+        return self._bits_per_item
 
     @property
     def variable_length(self) -> bool:
         """If True then the length of the data type depends on the data being interpreted, and must not be specified."""
-        pass
+        return self._variable_length
 
     @property
     def return_type(self) -> Any:
         """The type of the value returned by the parse method, such as int, float or str."""
-        pass
+        return self._return_type
 
     @property
     def is_signed(self) -> bool:
         """If True then the data type represents a signed quantity."""
-        pass
+        return self._is_signed
 
     @property
     def set_fn(self) -> Optional[Callable]:
         """A function to set the value of the data type."""
-        pass
+        return self._set_fn
 
     @property
     def get_fn(self) -> Callable:
         """A function to get the value of the data type."""
-        pass
+        return self._get_fn
 
     @property
     def read_fn(self) -> Callable:
         """A function to read the value of the data type."""
-        pass
+        return self._read_fn
 
     def __hash__(self) -> int:
         return hash((self._name, self._length))
@@ -102,13 +102,27 @@ class Dtype:
 
         The value parameter should be of a type appropriate to the dtype.
         """
-        pass
+        if self._set_fn is None:
+            raise NotImplementedError(f"Cannot build {self._name} dtype")
+        
+        if self._set_fn_needs_length:
+            return self._set_fn(value, self._length)
+        else:
+            return self._set_fn(value)
 
     def parse(self, b: BitsType, /) -> Any:
         """Parse a bitstring to find its value.
 
         The b parameter should be a bitstring of the appropriate length, or an object that can be converted to a bitstring."""
-        pass
+        if isinstance(b, bitstring.Bits):
+            bits = b
+        else:
+            bits = bitstring.Bits(b)
+        
+        if self._scale is not None:
+            return self._scale * self._get_fn(bits)
+        else:
+            return self._get_fn(bits)
 
     def __str__(self) -> str:
         if self._scale is not None:
