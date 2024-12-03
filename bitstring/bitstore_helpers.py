@@ -12,6 +12,6 @@ CACHE_SIZE = 256
 
 def tidy_input_string(s: str) -> str:
     """Return string made lowercase and with all whitespace and underscores removed."""
-    pass
+    return ''.join(c.lower() for c in s if c not in ' \t\n\r\f\v_')
 e8m0mxfp_allowed_values = [float(2 ** x) for x in range(-127, 128)]
 literal_bit_funcs: Dict[str, Callable[..., BitStore]] = {'0x': hex2bitstore, '0X': hex2bitstore, '0b': bin2bitstore, '0B': bin2bitstore, '0o': oct2bitstore, '0O': oct2bitstore}
