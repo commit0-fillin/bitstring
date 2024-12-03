@@ -51,7 +51,11 @@ class BitStore:
 
     def _copy(self) -> BitStore:
         """Always creates a copy, even if instance is immutable."""
-        pass
+        new_bitstore = BitStore()
+        new_bitstore._bitarray = self._bitarray.copy()
+        new_bitstore.modified_length = self.modified_length
+        new_bitstore.immutable = False  # The copy is always mutable
+        return new_bitstore
 
     def __getitem__(self, item: Union[int, slice], /) -> Union[int, BitStore]:
         raise NotImplementedError
