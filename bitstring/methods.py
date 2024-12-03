@@ -42,4 +42,47 @@ def pack(fmt: Union[str, List[str]], *values, **kwargs) -> BitStream:
     >>> u = pack('uint:8=a, uint:8=b, uint:55=a', a=6, b=44)
 
     """
-    pass
+    from bitstring.bitstream import BitStream
+    from bitstring.utils import tokenparser, expand_brackets
+
+    if isinstance(fmt, list):
+        fmt = ','.join(fmt)
+
+    fmt = expand_brackets(fmt)
+    _, tokens = tokenparser(fmt, tuple(kwargs.keys()))
+
+    if len(values) + len(kwargs) != len(tokens):
+        raise ValueError("Pack string leads to {} arguments, but {} values were provided".format(
+            len(tokens), len(values) + len(kwargs)))
+
+    bitstring = BitStream()
+    value_index = 0
+
+    for token in tokens:
+        name, length, value = token
+        if name in kwargs:
+            value = kwargs[name]
+        elif value is None:
+            value = values[value_index]
+            value_index += 1
+        
+        if name == 'bits':
+            bitstring.append(BitStream(auto=value, length=length))
+        elif name == 'bool':
+            bitstring.append(BitStream(bool=value))
+        elif name in ('int', 'uint', 'intbe', 'uintbe', 'intle', 'uintle', 'intne', 'uintne'):
+            bitstring.append(BitStream(**{name: value, 'length': length}))
+        elif name in ('float', 'floatbe', 'floatle', 'floatne'):
+            bitstring.append(BitStream(**{name: value}))
+        elif name in ('ue', 'se', 'uie', 'sie'):
+            bitstring.append(BitStream(**{name: value}))
+        elif name in ('hex', 'oct', 'bin'):
+            bitstring.append(BitStream(**{name: value, 'length': length}))
+        elif name == 'bytes':
+            bitstring.append(BitStream(bytes=value, length=length*8))
+        elif name == 'pad':
+            bitstring.append(BitStream(length=length))
+        else:
+            raise ValueError(f"Unknown token name: {name}")
+
+    return bitstring
