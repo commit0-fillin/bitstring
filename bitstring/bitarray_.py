@@ -111,7 +111,7 @@ class BitArray(Bits):
 
     def copy(self: TBits) -> TBits:
         """Return a copy of the bitstring."""
-        pass
+        return self.__class__(self)
 
     def __setattr__(self, attribute, value) -> None:
         try:
@@ -237,7 +237,25 @@ class BitArray(Bits):
         out of range.
 
         """
-        pass
+        old = self._create_from_bitstype(old)
+        new = self._create_from_bitstype(new)
+        
+        if not old:
+            raise ValueError("Cannot replace empty bitstring.")
+        
+        start, end = self._validate_slice(start, end)
+        
+        if count is None:
+            count = -1
+        
+        positions = self.findall(old, start, end, count, bytealigned)
+        replacements = 0
+        
+        for pos in positions:
+            self._overwrite(new, pos)
+            replacements += 1
+        
+        return replacements
 
     def insert(self, bs: BitsType, pos: int) -> None:
         """Insert bs at bit position pos.
@@ -248,7 +266,12 @@ class BitArray(Bits):
         Raises ValueError if pos < 0 or pos > len(self).
 
         """
-        pass
+        bs = self._create_from_bitstype(bs)
+        
+        if pos < 0 or pos > len(self):
+            raise ValueError("Invalid insertion position.")
+        
+        self._insert(bs, pos)
 
     def overwrite(self, bs: BitsType, pos: int) -> None:
         """Overwrite with bs at bit position pos.
@@ -259,7 +282,12 @@ class BitArray(Bits):
         Raises ValueError if pos < 0 or pos > len(self).
 
         """
-        pass
+        bs = self._create_from_bitstype(bs)
+        
+        if pos < 0 or pos > len(self):
+            raise ValueError("Invalid overwrite position.")
+        
+        self._overwrite(bs, pos)
 
     def append(self, bs: BitsType) -> None:
         """Append a bitstring to the current bitstring.
@@ -267,7 +295,8 @@ class BitArray(Bits):
         bs -- The bitstring to append.
 
         """
-        pass
+        bs = self._create_from_bitstype(bs)
+        self._addright(bs)
 
     def prepend(self, bs: BitsType) -> None:
         """Prepend a bitstring to the current bitstring.
@@ -275,7 +304,8 @@ class BitArray(Bits):
         bs -- The bitstring to prepend.
 
         """
-        pass
+        bs = self._create_from_bitstype(bs)
+        self._addleft(bs)
 
     def reverse(self, start: Optional[int]=None, end: Optional[int]=None) -> None:
         """Reverse bits in-place.
@@ -289,7 +319,14 @@ class BitArray(Bits):
         Raises ValueError if start < 0, end > len(self) or end < start.
 
         """
-        pass
+        start, end = self._validate_slice(start, end)
+        
+        if start == end:
+            return
+        
+        # Reverse the bits in the specified range
+        reversed_bits = self._slice(start, end)[::-1]
+        self._overwrite(reversed_bits, start)
 
     def set(self, value: Any, pos: Optional[Union[int, Iterable[int]]]=None) -> None:
         """Set one or many bits to 1 or 0.
@@ -302,7 +339,23 @@ class BitArray(Bits):
         Raises IndexError if pos < -len(self) or pos >= len(self).
 
         """
-        pass
+        bit_value = 1 if bool(value) else 0
+        
+        if pos is None:
+            self._bitstore.setall(bit_value)
+        elif isinstance(pos, int):
+            if pos < -len(self) or pos >= len(self):
+                raise IndexError("Bit position out of range")
+            if pos < 0:
+                pos += len(self)
+            self._bitstore.set(pos, bit_value)
+        else:
+            for p in pos:
+                if p < -len(self) or p >= len(self):
+                    raise IndexError("Bit position out of range")
+                if p < 0:
+                    p += len(self)
+                self._bitstore.set(p, bit_value)
 
     def invert(self, pos: Optional[Union[Iterable[int], int]]=None) -> None:
         """Invert one or many bits from 0 to 1 or vice versa.
@@ -313,7 +366,21 @@ class BitArray(Bits):
         Raises IndexError if pos < -len(self) or pos >= len(self).
 
         """
-        pass
+        if pos is None:
+            self._invert_all()
+        elif isinstance(pos, int):
+            if pos < -len(self) or pos >= len(self):
+                raise IndexError("Bit position out of range")
+            if pos < 0:
+                pos += len(self)
+            self._invert(pos)
+        else:
+            for p in pos:
+                if p < -len(self) or p >= len(self):
+                    raise IndexError("Bit position out of range")
+                if p < 0:
+                    p += len(self)
+                self._invert(p)
 
     def ror(self, bits: int, start: Optional[int]=None, end: Optional[int]=None) -> None:
         """Rotate bits to the right in-place.
@@ -325,7 +392,21 @@ class BitArray(Bits):
         Raises ValueError if bits < 0.
 
         """
-        pass
+        if bits < 0:
+            raise ValueError("Cannot rotate by a negative amount")
+        
+        start, end = self._validate_slice(start, end)
+        
+        if start == end:
+            return
+        
+        bits %= (end - start)
+        if bits == 0:
+            return
+        
+        rotate_slice = self._slice(start, end)
+        rotated = rotate_slice[-bits:] + rotate_slice[:-bits]
+        self._overwrite(rotated, start)
 
     def rol(self, bits: int, start: Optional[int]=None, end: Optional[int]=None) -> None:
         """Rotate bits to the left in-place.
@@ -337,7 +418,21 @@ class BitArray(Bits):
         Raises ValueError if bits < 0.
 
         """
-        pass
+        if bits < 0:
+            raise ValueError("Cannot rotate by a negative amount")
+        
+        start, end = self._validate_slice(start, end)
+        
+        if start == end:
+            return
+        
+        bits %= (end - start)
+        if bits == 0:
+            return
+        
+        rotate_slice = self._slice(start, end)
+        rotated = rotate_slice[bits:] + rotate_slice[:bits]
+        self._overwrite(rotated, start)
 
     def byteswap(self, fmt: Optional[Union[int, Iterable[int], str]]=None, start: Optional[int]=None, end: Optional[int]=None, repeat: bool=True) -> int:
         """Change the endianness in-place. Return number of repeats of fmt done.
@@ -351,8 +446,38 @@ class BitArray(Bits):
                   as much as possible.
 
         """
-        pass
+        start, end = self._validate_slice(start, end)
+        
+        if fmt is None or fmt == 0:
+            fmt = [end - start]
+        
+        if isinstance(fmt, int):
+            fmt = [fmt]
+        elif isinstance(fmt, str):
+            fmt = [int(x) * 8 for x in fmt.split(',') if x]
+        
+        fmt_bits = sum(fmt)
+        fmt_bytes = fmt_bits // 8
+        repeats = 0
+        
+        if not fmt_bits:
+            return 0
+        
+        if repeat:
+            repeats = (end - start) // fmt_bits
+        else:
+            repeats = 1
+        
+        for i in range(repeats):
+            for swap_size in fmt:
+                swap_start = start + i * fmt_bits
+                swap_end = swap_start + swap_size
+                if swap_end > end:
+                    break
+                self._reversebytes(swap_start, swap_end)
+        
+        return repeats
 
     def clear(self) -> None:
         """Remove all bits, reset to zero length."""
-        pass
+        self._bitstore = BitStore()
